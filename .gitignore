@@ -1,0 +1,5 @@
+.build/
+Talk.app/
+*.xcodeproj
+.DS_Store
+.claude/settings.local.json

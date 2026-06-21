@@ -1,0 +1,18 @@
+{
+  "provider": "groq",
+  "groqApiKey": "gsk_your_groq_key_here",
+  "anthropicApiKey": "sk-ant-your_anthropic_key_here",
+  "anthropicModel": "claude-haiku-4-5",
+  "cleanup": true,
+
+  "transcriptionModel": "whisper-large-v3",
+  "language": "en",
+  "transcriptionPrompt": "",
+
+  "_comment_accuracy": "transcriptionModel: 'whisper-large-v3' is most accurate; 'whisper-large-v3-turbo' is faster but less accurate. language: BCP-47 code of what you speak ('en', 'es', …) — improves accuracy. transcriptionPrompt: words/names/jargon/spellings to bias toward, e.g. 'Versionstory, Kubernetes, Zakar'.",
+  "_comment_provider": "Transcription backend: 'groq' (cloud, fast+cheap), 'openai' (cloud; set 'openaiApiKey'), or 'local' (on-device whisper.cpp — private, free, offline; needs the whisper-server running). Cleanup always uses Anthropic. Optional 'localEndpoint' overrides the default http://127.0.0.1:8080/inference.",
+  "_comment_cleanup": "When true (and an Anthropic key is set), Claude tidies the transcript before it is typed. Set false to type the raw transcript.",
+  "_comment_hotkey": "Default is the fn (Globe) key as push-to-talk: hold fn and speak, release to transcribe. Set hotKeyKey to 'fn' for that. To use a held-modifier combo instead (toggle: press once to start, again to stop), set both fields, e.g. modifiers + 'space':",
+  "hotKeyKey": "fn",
+  "_comment_combo_example": "\"hotKeyModifiers\": [\"control\", \"option\", \"command\"], \"hotKeyKey\": \"space\""
+}
