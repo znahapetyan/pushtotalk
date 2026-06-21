@@ -7,6 +7,7 @@ APP_NAME="Talk"
 BUNDLE_ID="com.example.talk"
 BUILD_DIR=".build/release"
 APP="${APP_NAME}.app"
+INSTALL_DIR="${INSTALL_DIR:-/Applications}"  # set INSTALL_DIR= to skip installing
 
 echo "==> Building release binary…"
 swift build -c release
@@ -50,5 +51,19 @@ PLIST
 echo "==> Ad-hoc code signing…"
 codesign --force --deep --sign - "$APP"
 
-echo "==> Done: $(pwd)/$APP"
-echo "    Run it with:  open $APP"
+echo "==> Built: $(pwd)/$APP"
+
+if [ -n "$INSTALL_DIR" ]; then
+    echo "==> Installing to ${INSTALL_DIR}…"
+    if rm -rf "${INSTALL_DIR}/${APP}" && cp -R "$APP" "${INSTALL_DIR}/"; then
+        echo "==> Done: ${INSTALL_DIR}/${APP}"
+        echo "    Run it with:  open -a ${APP_NAME}"
+    else
+        echo "==> WARNING: could not install to ${INSTALL_DIR} (permission denied?)."
+        echo "    Built locally — install manually:  cp -R ${APP} ${INSTALL_DIR}/"
+        echo "    Or run from here:  open ${APP}"
+    fi
+else
+    echo "==> Done (install skipped): $(pwd)/$APP"
+    echo "    Run it with:  open $APP"
+fi
