@@ -190,7 +190,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.state = .recording
             self.recordingStartedAt = Date()
             self.updateUI()
-            NSSound(named: "Tink")?.play()
         }
     }
 
@@ -203,7 +202,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         state = .processing
         updateUI()
-        NSSound(named: "Pop")?.play()
 
         // Captured on the main thread before going to the background queue.
         let language = activeLanguage
