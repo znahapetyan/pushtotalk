@@ -10,6 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var providerMenuItem: NSMenuItem!
     private var languageMenu: NSMenu!
     private var activeLanguage: String? // nil = auto-detect
+    private var microphoneMenuItem: NSMenuItem!
+    private var microphoneMenu: NSMenu!
+    /// Which mic to record from. Unlike the language/translate settings this is
+    /// sticky: it survives quitting and is not re-seeded from config.json.
+    private var micChoice: MicChoice = .systemDefault
     private var translateMenuItem: NSMenuItem!
     private var translateToEnglish = false
     private var hotKey: HotKey?
@@ -20,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var state: State = .idle
     private var fnHeld = false
     private var recordingStartedAt: Date?
+    /// A message to show once the current dictation has been pasted, so it isn't
+    /// wiped by the status updates the pipeline makes on its way there.
+    private var pendingWarning: String?
     private let workQueue = DispatchQueue(label: "com.example.talk.work")
 
     // MARK: - Lifecycle
@@ -58,6 +66,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             whisperServer.stop()
         }
+
+        // The microphone is deliberately NOT reset the way language/translate are
+        // below: it is the user's sticky choice, and config.json only seeds it
+        // while nothing has ever been picked from the menu.
+        micChoice = resolveMicrophone()
+        rebuildMicrophoneMenu()
+        primeRecorder()
 
         // Reset the active dictation language / translate mode to the configured defaults.
         activeLanguage = config?.language
@@ -104,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handleFnUp() {
         fnHeld = false
         guard state == .recording else { return }
-        guard let url = recorder.stop() else {
+        guard let recording = recorder.stop() else {
             state = .idle
             updateUI()
             return
@@ -112,12 +127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Ignore accidental quick taps.
         let elapsed = Date().timeIntervalSince(recordingStartedAt ?? Date())
         if elapsed < 0.4 {
-            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: recording.url)
             state = .idle
             updateUI()
             return
         }
-        process(audioAt: url)
+        process(recording)
+        primeRecorder()
     }
 
     // MARK: - Carbon hotkey (toggle)
@@ -129,12 +145,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .idle:
             startRecording()
         case .recording:
-            guard let url = recorder.stop() else {
+            guard let recording = recorder.stop() else {
                 state = .idle
                 updateUI()
                 return
             }
-            process(audioAt: url)
+            process(recording)
+            primeRecorder()
         case .processing:
             NSSound.beep() // busy — ignore
         }
@@ -183,7 +200,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             // If the fn key was released before permission resolved, abort.
             if pushToTalk, !self.fnHeld { return }
-            guard self.recorder.start() else {
+            // Resolve the choice now rather than trusting what the menu last saw:
+            // this is the only moment that matters, and it is one cheap lookup.
+            self.micChoice = self.resolveMicrophone()
+            switch self.recorder.start(deviceUID: self.micChoice.deviceUID) {
+            case .started:
+                break
+            case .deviceUnavailable:
+                // Deliberately no fallback to the system default: quietly
+                // recording from whatever macOS switched to is the exact thing
+                // pinning a microphone exists to prevent.
+                self.notify("\(self.micChoice.displayName) is not connected — pick a mic in the menu")
+                return
+            case .failed:
                 self.notify("could not start recording")
                 return
             }
@@ -193,12 +222,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func process(audioAt url: URL) {
+    private func process(_ recording: AudioRecorder.Recording) {
+        let url = recording.url
         guard let config = config else {
             try? FileManager.default.removeItem(at: url)
             state = .idle
             updateUI()
             return
+        }
+        // Nothing arrived from the microphone at all — a revoked permission or a
+        // device that stopped delivering, which is not the same as silence.
+        guard recording.duration > 0 else {
+            try? FileManager.default.removeItem(at: url)
+            state = .idle
+            updateUI()
+            notify("no audio captured — check microphone access and the chosen mic")
+            return
+        }
+        if recording.deviceChanged {
+            pendingWarning = "the microphone changed mid-recording (device disconnected)"
         }
         state = .processing
         updateUI()
@@ -253,20 +295,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func finish(with text: String) {
         state = .idle
         updateUI()
+        let warning = pendingWarning
+        pendingWarning = nil
         guard !text.isEmpty else {
-            notify("no speech detected")
+            notify(warning ?? "no speech detected")
             return
         }
         if !Paster.paste(text) {
             // Text is on the clipboard, but auto-typing is blocked.
             notify("copied to clipboard — grant Accessibility to auto-type (⌘V to paste)")
             Paster.ensureAccessibility() // re-prompt / open Settings
+        } else if let warning = warning {
+            notify(warning)
         }
     }
 
     private func finish(error message: String) {
         state = .idle
         updateUI()
+        pendingWarning = nil
         notify(String(message.prefix(120)))
     }
 
@@ -286,6 +333,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(providerMenuItem)
 
         menu.addItem(.separator())
+
+        // Microphone picker. Unlike Language below, this choice is remembered
+        // across launches and pins Talk to that device even when macOS moves its
+        // own input elsewhere (AirPods connecting, a USB interface waking up).
+        // Populated in rebuildMicrophoneMenu(), which runs each time the menu opens.
+        microphoneMenu = NSMenu()
+        microphoneMenuItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+        microphoneMenuItem.submenu = microphoneMenu
+        menu.addItem(microphoneMenuItem)
 
         // Language picker (applies to the next dictation onward).
         languageMenu = NSMenu()
@@ -377,6 +433,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         refreshProviderItem()
+        // Devices come and go constantly (AirPods, USB interfaces, meeting apps'
+        // virtual mics), so the list is rebuilt every time the menu is shown.
+        // That is also why Talk needs no CoreAudio device-change listener.
+        rebuildMicrophoneMenu()
     }
 
     private func refreshProviderItem() {
@@ -418,9 +478,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Shows a transient message in the menu, then restores the normal status.
+    /// The icon goes orange for the same four seconds — the menu title alone is
+    /// invisible during push-to-talk, when nobody has the menu open.
     private func notify(_ message: String) {
         let shown = "Talk — \(message)"
         statusMenuItem.title = shown
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "exclamationmark.triangle",
+                                   accessibilityDescription: "Talk")
+            button.image?.isTemplate = false
+            button.contentTintColor = .systemOrange
+        }
         NSSound.beep()
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
             guard let self = self else { return }
@@ -451,6 +519,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if alert.runModal() == .alertFirstButtonReturn {
             openConfig()
         }
+    }
+
+    // MARK: - Microphone
+
+    /// Precedence: a mic picked from the menu (~/.talk/state.json) always wins,
+    /// config.json's "microphone" seeds it for anyone who never touched the menu,
+    /// and otherwise Talk follows the system input. The seed is matched afresh
+    /// every time and never written to state.json, so naming a device that is
+    /// currently disconnected still works once it comes back.
+    private func resolveMicrophone() -> MicChoice {
+        if let saved = AppState.load().microphone { return saved }
+        guard let seed = config?.microphone else { return .systemDefault }
+        if seed.caseInsensitiveCompare(MicChoice.systemToken) == .orderedSame { return .systemDefault }
+        guard let device = AudioDevices.device(matching: seed) else {
+            return .pinned(uid: seed, name: seed) // shown as "(not connected)"
+        }
+        return .pinned(uid: device.uid, name: device.name)
+    }
+
+    private func rebuildMicrophoneMenu() {
+        guard microphoneMenu != nil else { return }
+        microphoneMenu.removeAllItems()
+
+        // Name the device "System default" currently resolves to, so what
+        // following macOS actually means right now is visible without leaving
+        // the menu.
+        let current = AudioDevices.defaultInput()?.name ?? "none"
+        let systemItem = NSMenuItem(title: "System default (\(current))",
+                                    action: #selector(selectMicrophone(_:)), keyEquivalent: "")
+        systemItem.target = self
+        systemItem.representedObject = MicChoice.systemDefault
+        microphoneMenu.addItem(systemItem)
+        microphoneMenu.addItem(.separator())
+
+        let devices = AudioDevices.inputs()
+        for device in devices {
+            let item = NSMenuItem(title: device.name, action: #selector(selectMicrophone(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = MicChoice.pinned(uid: device.uid, name: device.name)
+            // The UID tells apart two devices sharing a name, and is the string
+            // "microphone" in config.json accepts.
+            item.toolTip = device.isBluetooth
+                ? "\(device.uid)\nBluetooth — recording drops playback to call quality while it runs."
+                : device.uid
+            microphoneMenu.addItem(item)
+        }
+
+        // A pinned device that isn't here right now keeps its row, checked and
+        // clickable. Greying it out would read as "your choice was lost" and
+        // hiding it as "the pin silently reverted" — both are the worry pinning
+        // exists to remove.
+        if case .pinned(let uid, let name) = micChoice, !devices.contains(where: { $0.uid == uid }) {
+            let item = NSMenuItem(title: "\(name) (not connected)",
+                                  action: #selector(selectMicrophone(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = micChoice
+            item.toolTip = uid
+            microphoneMenu.addItem(item)
+        }
+
+        updateMicrophoneChecks()
+    }
+
+    @objc private func selectMicrophone(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? MicChoice else { return }
+        micChoice = choice
+        var state = AppState.load()
+        state.microphone = choice
+        state.save()
+        updateMicrophoneChecks()
+        primeRecorder()
+    }
+
+    /// Gets the mic ready for the next press. Deferred so the ~80 ms it takes
+    /// never lands on a key press or on redrawing the menu.
+    private func primeRecorder() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.recorder.prime(deviceUID: self.micChoice.deviceUID)
+        }
+    }
+
+    private func updateMicrophoneChecks() {
+        guard microphoneMenu != nil else { return }
+        // Separators carry no representedObject, so they simply never match.
+        for item in microphoneMenu.items {
+            item.state = ((item.representedObject as? MicChoice) == micChoice) ? .on : .off
+        }
+        // Put the active mic on the parent row so it reads at a glance, the way
+        // the Source line above it does.
+        microphoneMenuItem?.title = "Microphone: \(microphoneLabel())"
+    }
+
+    /// The chosen mic's name, flagged when it isn't currently connected.
+    private func microphoneLabel() -> String {
+        guard let uid = micChoice.deviceUID else { return micChoice.displayName }
+        return AudioDevices.device(uid: uid) == nil
+            ? "\(micChoice.displayName) (not connected)"
+            : micChoice.displayName
     }
 
     // MARK: - Menu actions

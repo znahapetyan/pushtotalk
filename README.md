@@ -9,6 +9,8 @@ hotkey ▸ record mic ▸ transcribe (Groq/OpenAI Whisper) ▸ clean up (Claude)
 ```
 
 - **System-wide** — works in any app, any text field (global Carbon hotkey).
+- **Pick your mic** — pin Talk to one microphone so connecting AirPods can't
+  move dictation off your built-in mic.
 - **Cloud transcription** — Groq `whisper-large-v3-turbo` (fast, cheap) or OpenAI.
 - **AI cleanup** — Claude Haiku 4.5 fixes punctuation/filler/grammar so it reads
   like you typed it. Optional; turn it off for the raw transcript.
@@ -66,7 +68,7 @@ permissions:
 By default Talk uses the **fn (🌐 Globe) key** as **push-to-talk**:
 
 1. Click into any text field.
-2. **Hold fn** and speak — the icon turns red and a tone plays.
+2. **Hold fn** and speak — the icon turns red.
 3. **Release fn**. Talk transcribes, cleans up, and types the text into the field.
 
 The menu-bar icon shows state: `mic` (ready) → red `mic.fill` (recording) →
@@ -92,6 +94,29 @@ In `~/.talk/config.json`:
 
 After editing, **Reload config** from the menu (or quit and reopen).
 
+## Choosing a microphone
+
+Menu-bar menu → **Microphone**. Pick a device and Talk records from *that* device
+from then on, even when macOS moves its own input somewhere else — which is what
+happens every time AirPods connect. The choice survives quitting, restarting, and
+unplugging the device: it is saved by CoreAudio device UID in `~/.talk/state.json`,
+so it re-attaches to the same physical mic on reconnect.
+
+- **System default** follows macOS the way Talk did before there was a picker.
+  The menu shows which device that currently is.
+- A pinned device that isn't plugged in shows as **(not connected)**. If you press
+  the hotkey while it's away, Talk **refuses to record** and says so rather than
+  quietly using another mic — silently switching is the bug the picker exists to
+  fix, so falling back would defeat it. Plug the device back in, or pick another.
+- **Bluetooth mics** (AirPods and friends) put the headset into call mode while
+  recording, which drops music to phone quality for those few seconds. macOS gives
+  apps no way around it. Pinning the built-in mic avoids it entirely — and at
+  48 kHz it also feeds Whisper better audio than a Bluetooth headset does.
+
+A default can be pre-set with `"microphone"` in `~/.talk/config.json` (a device
+name, a UID, or `"system"`), but a choice made in the menu wins from then on.
+`rm ~/.talk/state.json` hands control back to the config file.
+
 ## Improving accuracy
 
 If words come out wrong, in rough order of impact:
@@ -103,9 +128,11 @@ If words come out wrong, in rough order of impact:
 - **Custom vocabulary** — put names, jargon, acronyms, and preferred spellings in
   `"transcriptionPrompt"`, e.g. `"Versionstory, Kubernetes, gRPC, Zakar"`. The
   model biases toward those.
-- **Mic & environment** — a headset/AirPods mic beats the far-field built-in mic;
-  reduce background noise; raise **System Settings → Sound → Input** volume; speak
-  at a steady pace.
+- **Mic & environment** — pin the mic you want under **Microphone** in the menu so
+  macOS can't move it out from under you. A close headset mic beats the far-field
+  built-in one in a noisy room, though a Bluetooth headset is recorded in call mode
+  and is often *worse* than the 48 kHz built-in mic; reduce background noise; raise
+  **System Settings → Sound → Input** volume; speak at a steady pace.
 - **Cleanup model** — `"anthropicModel": "claude-sonnet-4-6"` fixes more
   transcription errors from context than Haiku (a bit slower/pricier).
 
@@ -163,7 +190,9 @@ while it's on.
 | File | Responsibility |
 |------|----------------|
 | `HotKey.swift` | System-wide hotkey via Carbon `RegisterEventHotKey` (no extra permissions, doesn't leak keystrokes). |
-| `AudioRecorder.swift` | Mic capture to 16 kHz mono m4a via AVFoundation. |
+| `AudioDevices.swift` | CoreAudio input-device enumeration and UID lookup — the stable id a pinned mic is remembered by. |
+| `AppState.swift` | `~/.talk/state.json` — the settings Talk writes itself (the chosen mic), separate from the hand-edited config. |
+| `AudioRecorder.swift` | Mic capture to 16 kHz mono 16-bit WAV via AVAudioEngine, pinned to the chosen input device. |
 | `Transcriber.swift` | Multipart upload to Groq/OpenAI Whisper endpoint. |
 | `Cleaner.swift` | Anthropic Messages API (`claude-haiku-4-5`) cleanup. |
 | `Paster.swift` | Clipboard + synthesized ⌘V via `CGEvent`. |
@@ -176,6 +205,10 @@ while it's on.
   on your machine.
 - **Clipboard**: Talk briefly uses the clipboard to paste, then restores your
   previous clipboard contents.
+- **Files**: `~/.talk/config.json` is yours to edit and Talk only reads it.
+  `~/.talk/state.json` is written by Talk (currently just the chosen microphone) —
+  copy it alongside the config when moving to another Mac, or leave it out to
+  start on the system default.
 - **GUI launch & keys**: launched as `Talk.app`, the app reads keys from
   `~/.talk/config.json` (GUI apps don't inherit your shell environment). Running
   the raw binary from a terminal also honors `GROQ_API_KEY` / `OPENAI_API_KEY` /

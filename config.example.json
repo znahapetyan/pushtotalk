@@ -9,6 +9,9 @@
   "language": "en",
   "transcriptionPrompt": "",
 
+  "microphone": "system",
+  "_comment_microphone": "Which mic to record from: 'system' (follow the macOS input device), a device name ('MacBook Pro Microphone', matched case-insensitively), or a CoreAudio device UID. This is only a DEFAULT — picking a mic from the menu-bar Microphone menu overrides it and is remembered in ~/.talk/state.json. Delete that file to hand control back to this one.",
+
   "_comment_accuracy": "transcriptionModel: 'whisper-large-v3' is most accurate; 'whisper-large-v3-turbo' is faster but less accurate. language: BCP-47 code of what you speak ('en', 'es', …) — improves accuracy. transcriptionPrompt: words/names/jargon/spellings to bias toward, e.g. 'Versionstory, Kubernetes, Zakar'.",
   "_comment_provider": "Transcription backend: 'groq' (cloud, fast+cheap), 'openai' (cloud; set 'openaiApiKey'), or 'local' (on-device whisper.cpp — private, free, offline; needs the whisper-server running). Cleanup always uses Anthropic. Optional 'localEndpoint' overrides the default http://127.0.0.1:8080/inference.",
   "_comment_cleanup": "When true (and an Anthropic key is set), Claude tidies the transcript before it is typed. Set false to type the raw transcript.",

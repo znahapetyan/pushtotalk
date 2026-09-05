@@ -28,6 +28,9 @@ struct Config {
     let anthropicKey: String
     let anthropicModel: String
     let cleanup: Bool
+    /// Optional default microphone — a device name or CoreAudio UID. Only a
+    /// seed: picking one from the menu overrides it (see AppState).
+    let microphone: String?
     let whisperServerPath: String
     let whisperModelPath: String
     let useFnKey: Bool
@@ -89,6 +92,8 @@ struct Config {
             throw TalkError.config("Missing transcription API key for provider '\(provider)'")
         }
 
+        let microphone = (json["microphone"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+
         let anthropicKey = (json["anthropicApiKey"] as? String) ?? env["ANTHROPIC_API_KEY"] ?? ""
         let anthropicModel = (json["anthropicModel"] as? String) ?? "claude-haiku-4-5"
         // Cleanup is on by default, but only possible if we have an Anthropic key.
@@ -122,6 +127,7 @@ struct Config {
             anthropicKey: anthropicKey,
             anthropicModel: anthropicModel,
             cleanup: cleanup,
+            microphone: microphone,
             whisperServerPath: whisperServerPath,
             whisperModelPath: whisperModelPath,
             useFnKey: usesFnKey(json),

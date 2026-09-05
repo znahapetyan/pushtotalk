@@ -94,8 +94,9 @@ A microphone icon appears in the menu bar. Three permission notes:
 - Default hotkey: **hold fn**, speak, release. (Configurable — README.md →
   "Changing the hotkey".)
 - The menu-bar icon shows state; its menu has **Source** (provider + whether the
-  local server is running), a **Language** picker, a **Translate to English**
-  toggle, **Open/Reload config**, and **Quit**.
+  local server is running), a **Microphone** picker (pins Talk to one input
+  device), a **Language** picker, a **Translate to English** toggle,
+  **Open/Reload config**, and **Quit**.
 
 ---
 
@@ -108,5 +109,8 @@ A microphone icon appears in the menu bar. Three permission notes:
   or `whisperModelPath` is wrong (see config / step 4).
 - The app is a menu-bar (accessory) app — no Dock icon, no window. Everything is
   in the menu-bar icon's menu.
+- **`~/.talk/state.json`** is written by the app itself (currently just the
+  chosen microphone). Copy it alongside `config.json` when moving Macs, or leave
+  it out to start on the system default input.
 
 Full reference and config options: **README.md** in this folder.
