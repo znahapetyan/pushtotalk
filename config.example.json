@@ -17,5 +17,7 @@
   "_comment_cleanup": "When true (and an Anthropic key is set), Claude tidies the transcript before it is typed. Set false to type the raw transcript.",
   "_comment_hotkey": "Default is the fn (Globe) key as push-to-talk: hold fn and speak, release to transcribe. Set hotKeyKey to 'fn' for that. To use a held-modifier combo instead (toggle: press once to start, again to stop), set both fields, e.g. modifiers + 'space':",
   "hotKeyKey": "fn",
+  "_comment_pushToTalkKeys": "Modifier keys you can hold for push-to-talk; holding any one records. Default ['fn', 'control']. Names: fn, control, option, command, shift, or one side of a modifier, e.g. 'rightoption', 'leftcommand'.",
+  "pushToTalkKeys": ["fn", "control"],
   "_comment_combo_example": "\"hotKeyModifiers\": [\"control\", \"option\", \"command\"], \"hotKeyKey\": \"space\""
 }

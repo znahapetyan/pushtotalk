@@ -83,6 +83,12 @@ The menu-bar icon shows state: `mic` (ready) → red `mic.fill` (recording) →
 In `~/.talk/config.json`:
 
 - **fn push-to-talk (default):** `"hotKeyKey": "fn"` — hold to record, release to send.
+- **Which keys are push-to-talk:** `"pushToTalkKeys"` lists the modifier keys you
+  can hold; holding any one of them records. The default is `["fn", "control"]`.
+  Names: `fn`, `control`, `option`, `command`, `shift`, and a one-side form of
+  each modifier, such as `"rightoption"` or `"leftcommand"`. For example,
+  `"pushToTalkKeys": ["rightoption"]` makes right Option the only key, so left
+  Option keeps working normally.
 - **Modifier combo (toggle):** set both fields, e.g.
   ```json
   "hotKeyModifiers": ["control", "option", "command"],

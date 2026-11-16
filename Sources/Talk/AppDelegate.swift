@@ -385,14 +385,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Human-readable list of push-to-talk keys, e.g. "fn or control".
     private func pushToTalkLabel() -> String {
-        let display: [String: String] = [
-            "fn": "fn", "function": "fn", "globe": "fn",
-            "control": "control", "ctrl": "control",
-            "option": "option", "alt": "option",
-            "command": "command", "cmd": "command", "shift": "shift",
-        ]
         let names = (config?.pushToTalkKeys ?? ["fn", "control"])
-            .map { display[$0.lowercased()] ?? $0 }
+            .compactMap { ModifierKeyMonitor.label(for: $0) }
         // De-duplicate while preserving order (fn/globe collapse to one).
         var seen = Set<String>()
         let unique = names.filter { seen.insert($0).inserted }
